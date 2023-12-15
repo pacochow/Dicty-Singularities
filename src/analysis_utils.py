@@ -6,19 +6,6 @@ from scipy.ndimage import gaussian_filter
 from scipy.signal import savgol_filter, find_peaks
 import math
 
-def classify_points_midline(cells, index1, index2, box_size, time, n_average = 5):
-    range1 = (index1, index1+box_size)
-    range2 = (index2, index2+box_size)
-
-    signal = np.sort(cells[time[0]:time[1], range1[0]:range1[1], range2[0]:range2[1]].reshape(time[1]-time[0], (range1[1]-range1[0])**2), axis = 1)[:, ::-1][:, :n_average].mean(axis = 1)
-    smoothed_signal = savgol_filter(signal, 13, 2)
-    derivatives = [(smoothed_signal[i+1]-smoothed_signal[i-1]) for i in range(1, len(smoothed_signal)-1)]
-
-    midline = savgol_filter(signal, 80, 2)
-    normalized_signal = (smoothed_signal - midline)[1:len(smoothed_signal)-1]
-    angles = [math.atan2(derivatives[i], normalized_signal[i]) for i in range(len(smoothed_signal)-2)]
-    return angles
-
 def classify_points_floor(cells, index1, index2, box_size, time, n_average=5, threshold = 25):
     range1 = (index1, index1+box_size)
     range2 = (index2, index2+box_size)
@@ -37,26 +24,31 @@ def classify_points_floor(cells, index1, index2, box_size, time, n_average=5, th
     floor = np.interp(np.arange(time[0], time[1], 1), high_peaks, smoothed_signal[high_peaks])
     diff = floor - smoothed_signal
     diff = savgol_filter(diff, 5, 2)
+    
     normalized_signal = (diff-threshold)[1:len(smoothed_signal)-1]
 
     angles = [math.atan2(derivatives[i], normalized_signal[i]) for i in range(len(smoothed_signal)-2)]
     return angles
 
-def classify_points_binarized(cells, index1, index2, box_size, time, threshold = 10):
+def classify_points_binarized(cells, index1, index2, box_size, time):
     range1 = (index1, index1+box_size)
     range2 = (index2, index2+box_size)
 
     raw_signal = cells[time[0]:time[1], range1[0]:range1[1], range2[0]:range2[1]].reshape(time[1]-time[0], (range1[1]-range1[0])**2)
     
     # Compute which pixels have cells
-    binarized = np.apply_along_axis(cell_or_not, 1, raw_signal)
+    binarized = np.apply_along_axis(cell_or_not, 0, raw_signal)
 
     # Set mask where there are no cells and compute mean 
     masked = np.where(binarized == 1, raw_signal, np.nan)
+
+    # Get signal for box averaged over pixels with cells
     signal = np.nanmean(masked, axis = 1)
-    signal = np.nan_to_num(signal)
     
+    # Smooth signal 
     smoothed_signal = savgol_filter(signal, 5, 2)
+
+    # Compute derivatives
     derivatives = [(smoothed_signal[i+1]-smoothed_signal[i-1]) for i in range(1, len(smoothed_signal)-1)]
 
     # Find high peaks
@@ -67,11 +59,74 @@ def classify_points_binarized(cells, index1, index2, box_size, time, threshold =
 
     # Linearly interpolate high peaks to compute floor
     floor = np.interp(np.arange(time[0], time[1]), high_peaks, smoothed_signal[high_peaks])
+    
+    # Normalize signal
     diff = floor - smoothed_signal
     diff = savgol_filter(diff, 5, 2)
+
+    # Compute threshold
+    diff_peaks = find_peaks(diff, distance = 6, height = 1)[0]
+    if len(diff_peaks)==0:
+        diff_peaks = np.arange(time[0], time[1])
+    diff_floor = np.interp(np.arange(time[0], time[1]), diff_peaks, diff[diff_peaks])
+    threshold = savgol_filter(diff_floor, 50, 2)/2
+    threshold = np.maximum(threshold, np.ones(len(threshold))*3)
+
+    # Normalize diff
     normalized_signal = (diff-threshold)[1:len(smoothed_signal)-1]
 
-    angles = np.array([(math.atan2(derivatives[i], normalized_signal[i]+np.pi)%(2*np.pi)) for i in range(len(smoothed_signal)-2)])
+    # Compute phase angles
+    angles = np.array([(math.atan2(derivatives[i], normalized_signal[i])+np.pi)%(2*np.pi) for i in range(len(smoothed_signal)-2)])
+    angles[signal[1:len(smoothed_signal)-1] == 0] = np.nan
+    return angles
+
+def classify_points_normalized(cells, index1, index2, box_size, time):
+    range1 = (index1, index1+box_size)
+    range2 = (index2, index2+box_size)
+
+    raw_signal = cells[time[0]:time[1], range1[0]:range1[1], range2[0]:range2[1]].reshape(time[1]-time[0], (range1[1]-range1[0])**2)
+    
+    # Compute which pixels have cells
+    binarized = np.apply_along_axis(cell_or_not_normalized, 0, raw_signal)
+
+    # Set mask where there are no cells and compute mean 
+    masked = np.where(binarized == 1, raw_signal, np.nan)
+
+    # Get signal for box averaged over pixels with cells
+    signal = np.nanmean(masked, axis = 1)
+    
+    # Smooth signal 
+    smoothed_signal = savgol_filter(signal, 5, 2)
+
+    # Compute derivatives
+    derivatives = [(smoothed_signal[i+1]-smoothed_signal[i-1]) for i in range(1, len(smoothed_signal)-1)]
+
+    # Find high peaks
+    high_peaks = find_peaks(smoothed_signal, distance = 20)[0]
+
+    if len(high_peaks)==0:
+        high_peaks = np.arange(time[0], time[1])
+
+    # Linearly interpolate high peaks to compute floor
+    floor = np.interp(np.arange(time[0], time[1]), high_peaks, smoothed_signal[high_peaks])
+    
+    # Normalize signal
+    diff = floor - smoothed_signal
+    diff = savgol_filter(diff, 5, 2)
+
+    # Compute threshold
+    diff_peaks = find_peaks(diff, distance = 20)[0]
+    if len(diff_peaks)==0:
+        diff_peaks = np.arange(time[0], time[1])
+    diff_floor = np.interp(np.arange(time[0], time[1]), diff_peaks, diff[diff_peaks])
+    threshold = savgol_filter(diff_floor, 50, 2)/2
+    threshold = np.maximum(threshold, np.ones(len(threshold))*0.02)
+    # Normalize diff
+    normalized_signal = (diff-threshold)[1:len(smoothed_signal)-1]
+
+
+    # Compute phase angles
+    angles = np.array([(math.atan2(derivatives[i], normalized_signal[i])+np.pi)%(2*np.pi) for i in range(len(smoothed_signal)-2)])
     angles[signal[1:len(smoothed_signal)-1] == 0] = np.nan
     return angles
 
@@ -101,6 +156,8 @@ def visualize_pixel_evolution(images, range1, range2, times):
 
     plt.tight_layout()
     plt.show()
+
+
 
 
 
@@ -312,7 +369,14 @@ def remove_zeros(signal):
     return signal
 
 
-def cell_or_not(signal, threshold = 115):
+def cell_or_not(signal, threshold = 90):
+    binarized = signal>threshold
+    convolve = np.convolve(np.ones(6), binarized, mode = 'same')
+    binarized_convolve = convolve > 0
+    return binarized_convolve
+
+
+def cell_or_not_normalized(signal, threshold = 0.6):
     binarized = signal>threshold
     convolve = np.convolve(np.ones(6), binarized, mode = 'same')
     binarized_convolve = convolve > 0

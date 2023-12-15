@@ -15,7 +15,8 @@ def create_data_timelapse(images: np.ndarray, filename: str, nSecs: float, start
     
     a = images[0]
 
-    im = plt.imshow(a, interpolation='none', cmap = 'gray', vmin = 110, vmax = 210)
+    # im = plt.imshow(a, interpolation='none', cmap = 'gray', vmin = 110, vmax = 210)
+    im = plt.imshow(a, interpolation='none', cmap = 'gray', vmin = 0.7, vmax = 1.5)
     plt.axis('off')
 
     # Create text element to display iteration number, centered and with larger font
@@ -43,7 +44,7 @@ def create_data_timelapse(images: np.ndarray, filename: str, nSecs: float, start
 
     print(' Full run done!')
 
-def animate_processed_data(images: np.ndarray, filename: str, nSecs: float, start_time: float, frame_intervals: float, frame_start = 0, tracking = False):
+def animate_processed_data(images: np.ndarray, filename: str, nSecs: float, start_time: float, frame_intervals: float, frame_start = 0, identifying = False, tracking = False):
 
     iterations = images.shape[0]
     fps = iterations/nSecs
@@ -53,16 +54,27 @@ def animate_processed_data(images: np.ndarray, filename: str, nSecs: float, star
     
     a = images[0]
 
-    im = plt.imshow(a, cmap = create_colormap())
+    im = plt.imshow(a, cmap = create_colormap(), vmin = -np.pi, vmax = np.pi)
 
     cbar = plt.colorbar(im)
     cbar.ax.tick_params(labelsize = 30)
 
-    if tracking is not False:
-        positive, negative = identify_singularities(tracking[0])
+    if identifying is not False:
+        positive, negative = identify_singularities(identifying[0])
         plt.scatter([x[1] for x in positive], [x[0] for x in positive], s=500, c = 'black', marker = 's')
         plt.scatter([x[1] for x in negative], [x[0] for x in negative], s=500, c='white', marker = 'o')
 
+    if tracking is not False:
+        positive, negative = tracking
+        colormap_p = create_tracking_colormap(positive)
+        colormap_n = create_tracking_colormap(negative)
+
+        for particle in positive[positive['frame'] == 0]['particle']:
+            particle_data = positive[(positive['frame'] == 0) & (positive['particle'] == particle)]
+            plt.scatter(particle_data['x'], particle_data['y'], s = 500, color=colormap_p[particle], marker = 's')
+        for particle in negative[negative['frame'] == 0]['particle']:
+            particle_data = negative[(negative['frame'] == 0) & (negative['particle'] == particle)]  
+            plt.scatter(particle_data['x'], particle_data['y'], s = 500, color=colormap_n[particle], marker = 'o')
 
 
     plt.axis('off')
@@ -80,11 +92,23 @@ def animate_processed_data(images: np.ndarray, filename: str, nSecs: float, star
         for collection in fig.gca().collections:
             collection.remove()
         # Scatter plot for singularities, if tracking is enabled
-        if tracking is not False:
+        if identifying is not False:
 
-            positive, negative = identify_singularities(tracking[i])
+            positive, negative = identify_singularities(identifying[i])
             plt.scatter([x[1] for x in positive], [x[0] for x in positive], s=500, c='black', marker='s', )
             plt.scatter([x[1] for x in negative], [x[0] for x in negative], s=500, c='white', marker='o')
+
+        if tracking is not False:
+            positive, negative = tracking
+            colormap_p = create_tracking_colormap(positive)
+            colormap_n = create_tracking_colormap(negative)
+            for particle in positive[positive['frame'] == i]['particle']:
+                particle_data = positive[(positive['frame'] == i) & (positive['particle'] == particle)]
+                plt.scatter(particle_data['x'], particle_data['y'], s = 500, color=colormap_p[particle], marker = 's')
+            for particle in negative[negative['frame'] == i]['particle']:
+                particle_data = negative[(negative['frame'] == i) & (negative['particle'] == particle)]
+                plt.scatter(particle_data['x'], particle_data['y'], s = 500, color=colormap_n[particle], marker = 'o')
+
 
 
         # Update iteration number text
@@ -122,7 +146,7 @@ def create_tracking_animation(phase: np.ndarray, tracking: np.ndarray, filename:
     for j in range(2):  # loop over your new dimension
         a = images[j, 0]  # the initial state for each animation
         if j == 0:
-            im = axs[j].imshow(a, cmap = 'hsv')
+            im = axs[j].imshow(a, cmap = 'twilight')
         else:
             im = axs[j].imshow(a, vmin = -1, vmax = 1)
         axs[j].axis('off')
