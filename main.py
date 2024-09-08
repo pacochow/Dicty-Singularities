@@ -7,11 +7,11 @@ from src.helpers import *
 import pandas as pd
 import trackpy as tp
 
-data = "Other" 
-frame_intervals = 15
+data = "B-24-08-29-AM" 
+frame_intervals = 20
 start_time = 3
 frame_start = 0
-transition = 400
+transition = 125
 
 full_length = 2220//4
 full_width = 1680//4
@@ -30,7 +30,7 @@ total_frames = cells.shape[0]
 box_size = 5
 length = (full_length-box_size)//2
 width = (full_width-box_size)//2
-base_threshold = 0.005
+base_threshold = 0.01
 
 # Normalize boxes
 for i in range(4):
@@ -57,43 +57,39 @@ for i in tqdm(range(length)):
 
 
 
-# cells = np.load(f"Data/{data}/Analysed_data/pooled_cells.npy")
-# cells/=cells[:500].mean(axis=0)
+cells = np.load(f"Data/{data}/Analysed_data/pooled_cells.npy")
+cells/=cells[:500].mean(axis=0)
 
 
 
-# # Normalize boxes
-# for i in range(4):
-#     for j in range(3):
-#         box = cells[:, i*stitch_length:(i+1)*stitch_length, j*stitch_width:(j+1)*stitch_width]
-#         box /= box[:500].mean()
+# Normalize boxes
+for i in range(4):
+    for j in range(3):
+        box = cells[:, i*stitch_length:(i+1)*stitch_length, j*stitch_width:(j+1)*stitch_width]
+        box /= box[:500].mean()
 
 
-# # Smooth cell signal
-# for i in tqdm(range(cells.shape[1])):
-#     for j in range(cells.shape[2]):
-#         cells[:, i, j] = savgol_filter(cells[:, i, j], 10, 2)
+# Smooth cell signal
+for i in tqdm(range(cells.shape[1])):
+    for j in range(cells.shape[2]):
+        cells[:, i, j] = savgol_filter(cells[:, i, j], 10, 2)
 
 
-# classified_pixels_late = np.zeros((total_frames-2, length, width))
-# for i in tqdm(range(length)):
-#     for j in range(width):
-#         classified_pixels_late[:, i,j] = classify_points_time_normalized(cells, i*2, j*2, box_size, (0,total_frames), base_threshold)
+classified_pixels_late = np.zeros((total_frames-2, length, width))
+for i in tqdm(range(length)):
+    for j in range(width):
+        classified_pixels_late[:, i,j] = classify_points_time_normalized(cells, i*2, j*2, box_size, (0,total_frames), base_threshold)
 
 
-# classified_pixels = np.concatenate((classified_pixels_early[:transition], classified_pixels_late[transition:]), axis = 0)
-np.save(f"Data/{data}/Analysed_data/normalized_method_{base_threshold}_mix.npy", classified_pixels_early)
+classified_pixels = np.concatenate((classified_pixels_early[:transition], classified_pixels_late[transition:]), axis = 0)
+np.save(f"Data/{data}/Analysed_data/normalized_method_{base_threshold}_mix.npy", classified_pixels)
 
 
 # Identify singularities
-smoothed = phase_gaussian_smoothing(classified_pixels_early, sigma = 1.5)
+smoothed = phase_gaussian_smoothing(classified_pixels, sigma = 1.5)
 
 winding_numbers = compute_winding_number(smoothed)
 np.save(f"Data/{data}/Analysed_data/winding_numbers.npy", winding_numbers)
-
-filename = f"Data/{data}/Vids/identifying_normalize_mix.mp4" 
-animate_processed_data(smoothed, filename, 40, start_time, frame_intervals, frame_start, identifying=winding_numbers, tracking = False)
-
 
 # Track all singularities
 positives = np.load(f"Data/{data}/Analysed_data/winding_numbers.npy")>0.9
@@ -124,11 +120,18 @@ filename = f"Data/{data}/Vids/tracking_normalize_mix_unfiltered.mp4"
 animate_processed_data(smoothed, filename, 40, start_time, frame_intervals, frame_start, identifying=False, tracking = tracking, coordinates = True)
 
 # Filter singularities
-positive, negative = filter_singularities(t1_p, t1_n, [25, 10, 20, 10], [40, 40, 40, 40], 850, 850, 850)
+positive, negative = filter_singularities(t1_p, t1_n, [15, 5, 10, 15], [40, 40, 40, 40], 230, 200, 375)
 
 # Save singularities
 positive.to_pickle(f"Data/{data}/Analysed_data/positive_df.pkl")
 negative.to_pickle(f"Data/{data}/Analysed_data/negative_df.pkl")
+
+positive['spin'] = '+'
+negative['spin'] = '-'
+negative['particle'] += positive['particle'].max()
+
+singularities = pd.concat([positive, negative], ignore_index=True)
+singularities.to_pickle(f"Data/{data}/Analysed_data/singularities.pkl")
 
 
 tracking = (positive, negative)
