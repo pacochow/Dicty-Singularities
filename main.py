@@ -7,11 +7,11 @@ from src.helpers import *
 import pandas as pd
 import trackpy as tp
 
-data = "B-24-08-29-AM" 
+data = "B-24-09-04-AM" 
 frame_intervals = 20
-start_time = 3
+start_time = 2.5
 frame_start = 0
-transition = 125
+transition = 240
 
 full_length = 2220//4
 full_width = 1680//4
@@ -22,7 +22,9 @@ stitch_width = full_width//3
 
 
 cells = np.load(f"Data/{data}/Analysed_data/pooled_cells.npy")
-cells/=cells[:500].mean(axis=0)
+cells/=cells[:500].mean(axis=0) # Normalize to remove border effects
+
+
 total_frames = cells.shape[0]
 
 
@@ -32,7 +34,7 @@ length = (full_length-box_size)//2
 width = (full_width-box_size)//2
 base_threshold = 0.01
 
-# Normalize boxes
+# Normalize boxes to smooth lighting
 for i in range(4):
     for j in range(3):
         box = cells[:, i*stitch_length:(i+1)*stitch_length, j*stitch_width:(j+1)*stitch_width]
@@ -47,7 +49,7 @@ for i in tqdm(range(cells.shape[1])):
     for j in range(cells.shape[2]):
         cells[:, i, j] = savgol_filter(cells[:, i, j], 10, 2)
 
-
+# Compute phase
 classified_pixels_early = np.zeros((total_frames-2, length, width))
 for i in tqdm(range(length)):
     for j in range(width):
@@ -56,13 +58,14 @@ for i in tqdm(range(length)):
 
 
 
+# Redo process for second half of recording
 
 cells = np.load(f"Data/{data}/Analysed_data/pooled_cells.npy")
 cells/=cells[:500].mean(axis=0)
 
 
 
-# Normalize boxes
+# Normalize boxes to smooth lighting
 for i in range(4):
     for j in range(3):
         box = cells[:, i*stitch_length:(i+1)*stitch_length, j*stitch_width:(j+1)*stitch_width]
@@ -74,13 +77,13 @@ for i in tqdm(range(cells.shape[1])):
     for j in range(cells.shape[2]):
         cells[:, i, j] = savgol_filter(cells[:, i, j], 10, 2)
 
-
+# Compute phase
 classified_pixels_late = np.zeros((total_frames-2, length, width))
 for i in tqdm(range(length)):
     for j in range(width):
         classified_pixels_late[:, i,j] = classify_points_time_normalized(cells, i*2, j*2, box_size, (0,total_frames), base_threshold)
 
-
+# Concatenate first and second half of recording depending on transition frame
 classified_pixels = np.concatenate((classified_pixels_early[:transition], classified_pixels_late[transition:]), axis = 0)
 np.save(f"Data/{data}/Analysed_data/normalized_method_{base_threshold}_mix.npy", classified_pixels)
 
@@ -120,21 +123,21 @@ filename = f"Data/{data}/Vids/tracking_normalize_mix_unfiltered.mp4"
 animate_processed_data(smoothed, filename, 40, start_time, frame_intervals, frame_start, identifying=False, tracking = tracking, coordinates = True)
 
 # Filter singularities
-positive, negative = filter_singularities(t1_p, t1_n, [15, 5, 10, 15], [40, 40, 40, 40], 230, 200, 375)
+# positive, negative = filter_singularities(t1_p, t1_n, [10, 15, 5, 15], [40, 40, 40, 40], 300, 280, 630)
 
-# Save singularities
-positive.to_pickle(f"Data/{data}/Analysed_data/positive_df.pkl")
-negative.to_pickle(f"Data/{data}/Analysed_data/negative_df.pkl")
+# # Save singularities
+# positive.to_pickle(f"Data/{data}/Analysed_data/positive_df.pkl")
+# negative.to_pickle(f"Data/{data}/Analysed_data/negative_df.pkl")
 
-positive['spin'] = '+'
-negative['spin'] = '-'
-negative['particle'] += positive['particle'].max()
+# positive['spin'] = '+'
+# negative['spin'] = '-'
+# negative['particle'] += positive['particle'].max()
 
-singularities = pd.concat([positive, negative], ignore_index=True)
-singularities.to_pickle(f"Data/{data}/Analysed_data/singularities.pkl")
+# singularities = pd.concat([positive, negative], ignore_index=True)
+# singularities.to_pickle(f"Data/{data}/Analysed_data/singularities.pkl")
 
 
-tracking = (positive, negative)
-filename = f"Data/{data}/Vids/tracking_normalize_mix.mp4" 
-animate_processed_data(smoothed, filename, 40, start_time, frame_intervals, frame_start, identifying=False, tracking = tracking, coordinates = False)
+# tracking = (positive, negative)
+# filename = f"Data/{data}/Vids/tracking_normalize_mix.mp4" 
+# animate_processed_data(smoothed, filename, 40, start_time, frame_intervals, frame_start, identifying=False, tracking = tracking, coordinates = False)
  
